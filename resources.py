@@ -9,16 +9,28 @@ INDENT_STR: str = " "*INDENT_WIDTH
 
 class ChoiceError(ValueError): pass
 
+class ReprWrapper(object):
+    def __repr__(self) -> str:
+        ts = str(self)
+        return "({})".format(ts[ts[:-3].rfind("'")+1:-2])
+    
 @dataclass
 class BassField:
     id: str
-    _type: type
+    t: type
 
 class Field(BassField):
     TYPE_DEFAULT: type = str
+    SUPPORTED_TYPES = (str, int, float)
+    TYPE_REPR_DICT = {}
+    for t in SUPPORTED_TYPES:
+        TYPE_REPR_DICT.update({ str(ReprWrapper(t)): t })
 
     def __repr__(self):
-        return f"<Field {type_repr_short(self._type)} '{self.id}'>"
+        return f"<Field {ReprWrapper(self.t)} '{self.id}'>"
+    
+    def set_type(self, t: type) -> None:
+        self.t = t
 
 class Category:
     BASE_FILEDS: tuple[Field] = (Field("date", str), Field("description", str))
@@ -54,18 +66,20 @@ class Category:
             c.add_custom_field(Field(f, Field.TYPE_DEFAULT))
         
         if bool_prompt("Would you like to change the type of any field?"):
+            fields: list[Field] = list(c.fields)
             while True:
-                pass
+                field = fields[which(fields)]
+                try:
+                    field.set_type(Field.TYPE_REPR_DICT[input("Enter the nwe field type: ")])
+                except KeyError:
+                    print("Error. Given field type not supported.")
+                    break
 
         return c
     
     def from_json_file(fs) -> Category:
         _dict = load(fs)
-
-
-def type_repr_short(t: type) -> str:
-    ts = str(t)
-    return "({})".format(ts[ts[:-3].rfind("'")+1:-2])
+    
 
 def options_menu(title: str, options: list[str]) -> None:
     CHAR = "*"
@@ -90,16 +104,19 @@ def error_check(
         condition: function, 
         err_msg: str = "Invalid response."
         ):
-    x = _type(_input)
-    if condition(x):
-        return x
-    else:
-        return error_check(
-            input("ERROR. " + err_msg + " "), 
-            _type, 
-            condition,
-            err_msg
-        )
+    try:
+        x = _type(_input)
+        if condition(x):
+            return x
+    except ValueError:
+        pass
+
+    return error_check(
+        input("ERROR. " + err_msg + " "), 
+        _type, 
+        condition,
+        err_msg
+    )
 
 def bool_prompt(prompt: str) -> bool:
     ans = input(prompt + " (Y/N) ")
@@ -110,11 +127,11 @@ def bool_prompt(prompt: str) -> bool:
         return False
     return bool_prompt("ERROR. Invalid response.")
 
-def which(options: list[str]) -> int:
-    options_menu(title="Which?", options=options)
-    choice = error_check(
+def which(options: list[str], title: str = "Which?") -> int:
+    options_menu(title=title, options=options)
+    return error_check(
         input("Please enter your choice: "),
         int,
-        lambda x: x > 0 and x < len(options)
-    )
-    return choice
+        lambda x: x > 0 and x < len(options),
+        "Invalid chioce."
+    ) - 1
